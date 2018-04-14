@@ -103,12 +103,10 @@ class GameState : IDisposable
             gameState.Zombies = new Zombie[Zombies.Length];
 
         gameState.Me = Me;
-        Array.Copy(Humans, gameState.Humans, Humans.Length);
-        //for (int i = 0; i < Humans.Length; i++)
-        //    gameState.Humans[i] = Humans[i];
-        Array.Copy(Zombies, gameState.Zombies, Zombies.Length);
-        //for (int i = 0; i < Zombies.Length; i++)
-        //    gameState.Zombies[i] = Zombies[i];
+        for (int i = 0; i < Humans.Length; i++)
+            gameState.Humans[i] = Humans[i];
+        for (int i = 0; i < Zombies.Length; i++)
+            gameState.Zombies[i] = Zombies[i];
         gameState.Score = Score;
         gameState.HumansLeft = HumansLeft;
         gameState.ZombiesLeft = ZombiesLeft;
@@ -214,15 +212,6 @@ class GameState : IDisposable
                     HumansLeft--;
                 }
             }
-        //for (int i = 0; i < Humans.Length; i++)
-        //    if (!Humans[i].Dead)
-        //        foreach (Zombie zombie in Zombies)
-        //            if (!zombie.Dead && zombie.Position.X == Humans[i].Position.X && zombie.Position.Y == Humans[i].Position.Y)
-        //            {
-        //                Humans[i].Dead = true;
-        //                HumansLeft--;
-        //                break;
-        //            }
     }
 
     public bool IsHumanAlive(int humanId)
@@ -276,7 +265,7 @@ class Game
         int complexScore;
         Point complexDestination;
 
-        ComplexStrategy(sw, gameState, out complexScore, out complexDestination);
+        BruteForceStrategy(sw, gameState, out complexScore, out complexDestination);
         DumpLine("Complex: {0}", complexScore);
         if (complexScore >= bestScore)
             return complexDestination;
@@ -311,7 +300,7 @@ class Game
         }
     }
 
-    private bool ComplexStrategy(Stopwatch sw, GameState gameState, out int bestScore, out Point bestPoint)
+    private bool BruteForceStrategy(Stopwatch sw, GameState gameState, out int bestScore, out Point bestPoint)
     {
         bool timeToStop = false;
 
@@ -335,7 +324,7 @@ class Game
                         if (gs.ZombiesLeft == 0)
                             score = gs.Score;
                         else
-                            timeToStop = ComplexStrategy(sw, gs, out score, out point);
+                            timeToStop = BruteForceStrategy(sw, gs, out score, out point);
                         if (score > bestScore)
                         {
                             bestPoint = interseption;
