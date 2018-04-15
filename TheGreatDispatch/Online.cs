@@ -10,7 +10,7 @@ struct TargetWeight
 
     public int Distance(int value)
     {
-        if (value < Min)
+        if (value <= Min)
             return Min - value;
         return value - Max;
     }
@@ -260,6 +260,12 @@ class Truck
 
 static class Solver
 {
+#if LOCAL
+    const double MaxExecutionTimeSeconds = 30;
+#else
+    const double MaxExecutionTimeSeconds = 45;
+#endif
+
     public static void Solve(Box[] boxes)
     {
         Stopwatch sw = Stopwatch.StartNew();
@@ -271,11 +277,11 @@ static class Solver
                 Id = i,
             };
 
-        int minTargetWeight = (int)Math.Floor(boxes.Sum(b => (double)b.Weight) / trucks.Length);
+        double minTargetWeight = boxes.Sum(b => (double)b.Weight) / trucks.Length;
         TargetWeight targetWeight = new TargetWeight()
         {
-            Min = minTargetWeight,
-            Max = minTargetWeight + 1,
+            Min = (int)Math.Floor(minTargetWeight),
+            Max = (int)Math.Ceiling(minTargetWeight),
         };
 
         foreach (Box b in boxes.OrderBy(b => -b.Weight))
@@ -299,7 +305,7 @@ static class Solver
         int bestScore = int.MaxValue;
         Truck[] solution = null;
 
-        while (sw.Elapsed.TotalSeconds < 45)
+        while (sw.Elapsed.TotalSeconds < MaxExecutionTimeSeconds)
         {
             // Fix volume problems
             foreach (Truck truck1 in trucks.OrderBy(t => -t.Volume).ToArray())
@@ -339,11 +345,11 @@ static class Solver
                 }
 
             // Complex optimization
-            const int ComplexOptimizationMaxMoves = 1000;
+            const int ComplexOptimizationMaxMoves = 500;
 
             foreach (Truck t in trucks)
                 t.UpdateMoves(ComplexOptimizationMaxMoves);
-            for (int skip = 0; skip < trucks.Length && sw.Elapsed.TotalSeconds < 45;)
+            for (int skip = 0; skip < trucks.Length && sw.Elapsed.TotalSeconds < MaxExecutionTimeSeconds;)
             {
                 int score = trucks.Max(t => t.Weight) - trucks.Min(t => t.Weight);
 
@@ -355,7 +361,8 @@ static class Solver
 #if LOCAL
                 Console.Write($"{bestScore} {sw.Elapsed.TotalSeconds}s {score}                               \r");
 #endif
-                Truck truck1 = trucks.OrderBy(t => -targetWeight.Distance(t.Weight)).Skip(skip).First();
+                Truck[] fats = trucks.OrderBy(t => -targetWeight.Distance(t.Weight)).Skip(skip).ToArray();
+                Truck truck1 = fats[0];
 
                 if (targetWeight.Distance(truck1.Weight) == 0)
                     break;
@@ -366,7 +373,7 @@ static class Solver
                 Truck truck2 = null;
                 int newWeightBalance = t1balance;
 
-                foreach (Truck t2 in trucks)
+                foreach (Truck t2 in fats)
                     if (truck1 != t2)
                     {
                         int t2balance = targetWeight.Distance(t2.Weight);
@@ -380,19 +387,14 @@ static class Solver
                             int end = maxM2Volume > t2.Moves[t2.Moves.Length - 1].Volume ? t2.Moves.Length : BinarySearch(t2.Moves, maxM2Volume);
                             int t1weight = truck1.Weight - m1.Weight;
                             int t2weight = t2.Weight + m1.Weight;
-                            int minM2Weight = (-previousWeightBalance - t1weight + t2weight) / 2;
-                            int maxM2Weight = (previousWeightBalance - t1weight + t2weight) / 2;
 
                             for (int i = start; i < end; i++)
                             {
                                 ComplexMove m2 = t2.Moves[i];
 
-                                if (m2.Weight < minM2Weight || m2.Weight > maxM2Weight)
-                                    continue;
-
                                 int t1w = t1weight + m2.Weight;
                                 int t2w = t2weight - m2.Weight;
-                                int balance = targetWeight.Distance(t1w) + targetWeight.Distance(t2w) - previousWeightBalance;
+                                int balance = targetWeight.Distance(t2w) - t1balance;
 
                                 if (balance >= 0)
                                     continue;
@@ -429,83 +431,65 @@ static class Solver
                 truck2.UpdateMoves(ComplexOptimizationMaxMoves);
             }
 
-            // Do few iterations of unconstrained optimization
-            int count = 1;
+#if LOCAL
+            //foreach (Truck t in trucks.OrderBy(t => targetWeight.Distance(t.Weight)).ToArray())
+            //    Console.WriteLine($"{t.Id}: {targetWeight.Distance(t.Weight)}[{t.Boxes.Count}]   {t.Weight / (double)Box.FixedPoint}  {t.Volume / (double)Box.FixedPoint}");
+#endif
+            // Randomize a bit
+            Truck[] ttt = trucks.Where(t => targetWeight.Distance(t.Weight) > 0).OrderBy(t => targetWeight.Distance(t.Weight)).ToArray();
+            bool[] touched = new bool[ttt.Length];
 
-            for (int c = 0; c < count; c++)
-            {
-                Truck truck1 = trucks.OrderBy(t => -targetWeight.Distance(t.Weight)).First();
-
-                if (targetWeight.Distance(truck1.Weight) == 0)
-                    break;
-
-                int t1balance = targetWeight.Distance(truck1.Weight);
-                ComplexMove move1 = null;
-                ComplexMove move2 = null;
-                Truck truck2 = null;
-                int newWeightBalance = t1balance;
-
-                foreach (Truck t2 in trucks)
-                    if (truck1 != t2)
-                    {
-                        int t2balance = targetWeight.Distance(t2.Weight);
-                        int previousWeightBalance = t1balance + t2balance;
-
-                        foreach (ComplexMove m1 in truck1.Moves)
+            for (int i = 0; i < ttt.Length / 2 && sw.Elapsed.TotalSeconds < MaxExecutionTimeSeconds; i++)
+                if (!touched[i])
+                {
+                    Truck t1 = ttt[i];
+                    Truck truck1 = t1;
+                    Truck truck2 = null;
+                    int bestj = -1;
+                    ComplexMove move1 = null;
+                    ComplexMove move2 = null;
+                    int bestDistance = int.MaxValue;
+                    for (int j = 0; j < ttt.Length; j++)
+                        if (i != j && !touched[j])
                         {
-                            int t1weight = truck1.Weight - m1.Weight;
-                            int t2weight = t2.Weight + m1.Weight;
-                            int minM2Weight = (-previousWeightBalance - t1weight + t2weight) / 2;
-                            int maxM2Weight = (previousWeightBalance - t1weight + t2weight) / 2;
+                            Truck t2 = ttt[j];
 
-                            foreach (ComplexMove m2 in t2.Moves)
-                            {
-                                if (m2.Weight < minM2Weight || m2.Weight > maxM2Weight)
-                                    continue;
+                            foreach (ComplexMove m1 in t1.Moves)
+                                if (m1.Boxes.Length != t1.Boxes.Count)
+                                    foreach (ComplexMove m2 in t2.Moves)
+                                    {
+                                        if (t1.Volume - m1.Volume + m2.Volume > Truck.MaxVolume)
+                                            continue;
+                                        if (t2.Volume - m2.Volume + m1.Volume > Truck.MaxVolume)
+                                            continue;
+                                        int distance = Math.Abs(m1.Weight - m2.Weight);
 
-                                int t1w = t1weight + m2.Weight;
-                                int t2w = t2weight - m2.Weight;
-                                int balance = targetWeight.Distance(t1w) + targetWeight.Distance(t2w) - previousWeightBalance;
-
-                                if (balance > 0 || targetWeight.Distance(t1w) == t2balance)
-                                    continue;
-
-                                int weight = truck1.Weight + m2.Weight - m1.Weight;
-                                int weightBalance = targetWeight.Distance(weight);
-
-                                if (weightBalance < newWeightBalance)
-                                {
-                                    move1 = m1;
-                                    move2 = m2;
-                                    truck2 = t2;
-                                    newWeightBalance = weightBalance;
-                                }
-                            }
+                                        if (distance < bestDistance ||
+                                            (distance == bestDistance && m1.Boxes.Length + m2.Boxes.Length > move1.Boxes.Length + move2.Boxes.Length))
+                                        {
+                                            move1 = m1;
+                                            move2 = m2;
+                                            truck2 = t2;
+                                            bestDistance = distance;
+                                            bestj = j;
+                                        }
+                                    }
                         }
-                    }
-                if (truck2 == null)
-                    break;
-
-                foreach (Box b in move1.Boxes)
-                    truck1.RemoveBox(b);
-                foreach (Box b in move2.Boxes)
-                    truck2.RemoveBox(b);
-                foreach (Box b in move2.Boxes)
-                    truck1.AddBox(b);
-                foreach (Box b in move1.Boxes)
-                    truck2.AddBox(b);
-                truck1.UpdateMoves(ComplexOptimizationMaxMoves);
-                truck2.UpdateMoves(ComplexOptimizationMaxMoves);
-            }
+                    touched[i] = true;
+                    touched[bestj] = true;
+                    foreach (Box b in move1.Boxes)
+                        truck1.RemoveBox(b);
+                    foreach (Box b in move2.Boxes)
+                        truck2.RemoveBox(b);
+                    foreach (Box b in move2.Boxes)
+                        truck1.AddBox(b);
+                    foreach (Box b in move1.Boxes)
+                        truck2.AddBox(b);
+                }
         }
 
         for (int i = 0; i < solution.Length; i++)
             boxes[i].Truck = solution[i];
-
-#if LOCAL
-        //foreach (Truck t in trucks.OrderBy(t => Math.Abs(t.Weight - targetWeight)).ToArray())
-        //    Console.WriteLine($"{t.Id}: {Math.Abs(t.Weight - targetWeight)}   {t.Weight / (double)Box.FixedPoint}  {t.Volume / (double)Box.FixedPoint}");
-#endif
     }
 
     private static int BinarySearch(ComplexMove[] moves, int minVolume)
