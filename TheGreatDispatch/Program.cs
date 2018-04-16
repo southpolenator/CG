@@ -12,12 +12,12 @@ namespace TheGreatDispatch
     {
         static void Main(string[] args)
         {
-            //RunTest("test.01");
-            int cost = 0;
+            RunTest("test.06");
+            //int cost = 0;
 
-            for (int i = 1; i <= 6; i++)
-                cost += RunTest($"test.0{i}");
-            Console.WriteLine($"Total cost: {cost / (double)Box.FixedPoint}");
+            //for (int i = 1; i <= 6; i++)
+            //    cost += RunTest($"test.0{i}");
+            //Console.WriteLine($"Total cost: {cost / (double)Box.FixedPoint}");
         }
 
         static int RunTest(string fileName)
