@@ -9,8 +9,8 @@ namespace Code_vs_Zombies
     {
         static void Main(string[] args)
         {
-            //RunTest(Level08);
-            RunAllLevel();
+            RunTest(Level07);
+            //RunAllLevel();
         }
 
         static void RunAllLevel()
@@ -21,7 +21,7 @@ namespace Code_vs_Zombies
 
         static void RunTests(string[] tests)
         {
-            int total = 0;
+            long total = 0;
 
             for (int i = 0; i < tests.Length; i++)
             {
@@ -34,7 +34,7 @@ namespace Code_vs_Zombies
             Console.WriteLine("Total score: {0}", total);
         }
 
-        static int RunTest(string test)
+        static long RunTest(string test)
         {
             GameState gameState = Parse(test);
             Game game = new Game();
@@ -100,8 +100,8 @@ namespace Code_vs_Zombies
 
             for (int i = 0; i < s.Length; i += 8)
             {
-                int x = ParseInt(s.Substring(i, 4));
-                int y = ParseInt(s.Substring(i + 4, 4));
+                short x = (short)ParseInt(s.Substring(i, 4));
+                short y = (short)ParseInt(s.Substring(i + 4, 4));
 
                 yield return new Point { X = x, Y = y };
             }
