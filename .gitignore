@@ -5,3 +5,8 @@
 /.vs/
 bin/
 obj/
+/Debug
+/TheGreatDispatchCpp/Debug
+/TheGreatDispatchCpp/x64/Release
+/x64/Release
+*.vspx

@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Code_vs_Zombies
 {
@@ -11,7 +9,7 @@ namespace Code_vs_Zombies
     {
         static void Main(string[] args)
         {
-            //RunTest(Level18);
+            //RunTest(Level08);
             RunAllLevel();
         }
 
@@ -42,24 +40,21 @@ namespace Code_vs_Zombies
             Game game = new Game();
             int turns = 1;
 
-            for (int turn = 1; (gameState.Zombies.Count(z => !z.Dead) > 0 && gameState.Humans.Count(h => !h.Dead) > 0); turn++)
+            for (int turn = 1; (gameState.ZombiesLeft > 0 && gameState.HumansLeft > 0); turn++)
             {
-                GameState gs = new GameState();
-
-                gs.Me = gameState.Me;
-                gs.Humans = gameState.Humans.Where(h => !h.Dead).ToArray();
-                gs.Zombies = gameState.Zombies.Where(z => !z.Dead).ToArray();
-
                 Stopwatch sw = Stopwatch.StartNew();
-
+                GameState gs = gameState.Clone();
+                gs.Score = 0;
                 Point destination = game.PlayTurn(gs);
                 if (sw.ElapsedMilliseconds > 50)
                     Console.WriteLine("Long turn: {0}", sw.ElapsedMilliseconds);
-                //    throw new Exception("Too long turn");
 
                 gameState.Simulate(destination);
                 turns++;
             }
+
+            if (gameState.HumansLeft <= 0)
+                gameState.Score = 0;
 
             // Calculate game score
             Console.WriteLine("Score: {0}, Turns: {1}", gameState.Score, turns);
@@ -79,17 +74,22 @@ namespace Code_vs_Zombies
             for (int i = 0; i < zombies.Length; i++)
                 gameState.Zombies[i] = new Zombie
                 {
+#if EXTENDED_INFO
                     Id = i,
+#endif
                     Position = zombies[i],
                 };
+            gameState.ZombiesLeft = zombies.Length;
             gameState.Humans = new Human[humans.Length];
             for (int i = 0; i < humans.Length; i++)
                 gameState.Humans[i] = new Human
                 {
+#if EXTENDED_INFO
                     Id = i,
+#endif
                     Position = humans[i],
                 };
-
+            gameState.HumansLeft = humans.Length;
             return gameState;
         }
 

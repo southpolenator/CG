@@ -6,6 +6,41 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 
+class ArrayStack<T>
+{
+    private T[] elements;
+    private int used;
+
+    public ArrayStack(int count)
+    {
+        elements = new T[count];
+        used = 0;
+    }
+
+    public int Count
+    {
+        get
+        {
+            return used;
+        }
+    }
+
+    public void Push(T element)
+    {
+        if (used + 1 < elements.Length)
+        {
+            elements[used] = element;
+            used++;
+        }
+    }
+
+    public T Pop()
+    {
+        used--;
+        return elements[used];
+    }
+}
+
 struct Point
 {
     public int X;
@@ -25,13 +60,54 @@ struct Point
     {
         return string.Format("({0}, {1})", X, Y);
     }
+
+    public override bool Equals(object obj)
+    {
+        if (!(obj is Point))
+        {
+            return false;
+        }
+
+        var point = (Point)obj;
+
+        return X == point.X && Y == point.Y;
+    }
+
+    public override int GetHashCode()
+    {
+        var hashCode = 1861411795;
+        hashCode = hashCode * -1521134295 + base.GetHashCode();
+        hashCode = hashCode * -1521134295 + X.GetHashCode();
+        hashCode = hashCode * -1521134295 + Y.GetHashCode();
+        return hashCode;
+    }
+
+    public static bool operator !=(Point p1, Point p2)
+    {
+        return p1.X != p2.X || p1.Y != p2.Y;
+    }
+
+    public static bool operator ==(Point p1, Point p2)
+    {
+        return p1.X == p2.X && p1.Y == p2.Y;
+    }
 }
 
 struct Human
 {
     public Point Position;
+#if EXTENDED_INFO
     public int Id;
-    public bool Dead;
+#endif
+
+    public override string ToString()
+    {
+#if EXTENDED_INFO
+        return $"{Id}: Position";
+#else
+        return Position.ToString();
+#endif
+    }
 }
 
 struct Zombie
@@ -40,18 +116,32 @@ struct Zombie
     public const int Speed2 = Speed * Speed;
 
     public Point Position;
+#if EXTENDED_INFO
     public int Id;
+#if !LOCAL
     public Point NextPosition;
-    public bool Dead;
-    public int HumanIndex; // Where it is running to
+#endif
+#endif
+
+    public override string ToString()
+    {
+#if EXTENDED_INFO
+        return $"{Id}: Position";
+#else
+        return Position.ToString();
+#endif
+    }
 }
 
 class GameState : IDisposable
 {
+    public const int MaxHumans = 100;
+    public const int MaxZombies = 100;
+    public const int MaxArrayStackElements = 100;
     private static int[] FibonacciSequence;
-    private static Stack<GameState> gameStatesStack = new Stack<GameState>();
-    private static Stack<Human[]>[] humansDictionaryStack = new Stack<Human[]>[100];
-    private static Stack<Zombie[]>[] zombiesDictionaryStack = new Stack<Zombie[]>[100];
+    public static ArrayStack<GameState> gameStatesStack = new ArrayStack<GameState>(MaxArrayStackElements);
+    public static ArrayStack<Human[]>[] humansDictionaryStack = new ArrayStack<Human[]>[MaxHumans];
+    public static ArrayStack<Zombie[]>[] zombiesDictionaryStack = new ArrayStack<Zombie[]>[MaxZombies];
     public Point Me;
     public Human[] Humans;
     public Zombie[] Zombies;
@@ -67,9 +157,9 @@ class GameState : IDisposable
         for (int i = 2; i < FibonacciSequence.Length; i++)
             FibonacciSequence[i] = FibonacciSequence[i - 1] + FibonacciSequence[i - 2];
         for (int i = 0; i < humansDictionaryStack.Length; i++)
-            humansDictionaryStack[i] = new Stack<Human[]>();
+            humansDictionaryStack[i] = new ArrayStack<Human[]>(MaxArrayStackElements);
         for (int i = 0; i < zombiesDictionaryStack.Length; i++)
-            zombiesDictionaryStack[i] = new Stack<Zombie[]>();
+            zombiesDictionaryStack[i] = new ArrayStack<Zombie[]>(MaxArrayStackElements);
     }
 
     public void Dispose()
@@ -79,8 +169,9 @@ class GameState : IDisposable
         gameStatesStack.Push(this);
     }
 
-    public GameState Clone()
+    public GameState Clone(int zombieIndex = -1)
     {
+        int zombiesCount = zombieIndex == -1 ? ZombiesLeft : 1;
         GameState gameState;
 
         if (gameStatesStack.Count > 0)
@@ -88,72 +179,59 @@ class GameState : IDisposable
         else
             gameState = new GameState();
 
-        Stack<Human[]> humansStack = humansDictionaryStack[Humans.Length];
+        ArrayStack<Human[]> humansStack = humansDictionaryStack[HumansLeft];
 
         if (humansStack.Count > 0)
             gameState.Humans = humansStack.Pop();
         else
-            gameState.Humans = new Human[Humans.Length];
+            gameState.Humans = new Human[HumansLeft];
 
-        Stack<Zombie[]> zombiesStack = zombiesDictionaryStack[Zombies.Length];
+        ArrayStack<Zombie[]> zombiesStack = zombiesDictionaryStack[zombiesCount];
 
         if (zombiesStack.Count > 0)
             gameState.Zombies = zombiesStack.Pop();
         else
-            gameState.Zombies = new Zombie[Zombies.Length];
+            gameState.Zombies = new Zombie[zombiesCount];
 
         gameState.Me = Me;
-        for (int i = 0; i < Humans.Length; i++)
+        for (int i = 0; i < HumansLeft; i++)
             gameState.Humans[i] = Humans[i];
-        for (int i = 0; i < Zombies.Length; i++)
-            gameState.Zombies[i] = Zombies[i];
+        if (zombieIndex != -1)
+            gameState.Zombies[0] = Zombies[zombieIndex];
+        else
+            for (int i = 0; i < ZombiesLeft; i++)
+                gameState.Zombies[i] = Zombies[i];
         gameState.Score = Score;
         gameState.HumansLeft = HumansLeft;
-        gameState.ZombiesLeft = ZombiesLeft;
+        gameState.ZombiesLeft = zombiesCount;
         return gameState;
     }
 
-    public void Init()
+    public unsafe void Simulate(Point myDestination)
     {
-        HumansLeft = 0;
-        foreach (Human human in Humans)
-            if (!human.Dead)
-                HumansLeft++;
-        ZombiesLeft = 0;
-        foreach (Zombie zombie in Zombies)
-            if (!zombie.Dead)
-                ZombiesLeft++;
-    }
-
-    public void Simulate(Point myDestination)
-    {
-        if (ZombiesLeft < 0 || HumansLeft < 0)
-            Init();
+        bool* humanCaught = stackalloc bool[HumansLeft];
 
         // 1. Move zombies
-        for (int i = 0; i < Zombies.Length; i++)
+        for (int i = 0; i < ZombiesLeft; i++)
         {
-            if (Zombies[i].Dead)
-                continue;
-
-            // Find who is zombie chasing
+            // Find which human zombie is chasing
             Point zombiePosition = Zombies[i].Position;
             double minDistance2 = zombiePosition.Distance2(Me);
             Point destination = Me;
+            int humanIndex = -1;
 
-            Zombies[i].HumanIndex = -1;
-            for (int j = 0; j < Humans.Length; j++)
-                if (!Humans[j].Dead)
+            for (int j = 0; j < HumansLeft; j++)
+            {
+                double distance2 = zombiePosition.Distance2(Humans[j].Position);
+
+                if (distance2 < minDistance2)
                 {
-                    double distance2 = zombiePosition.Distance2(Humans[j].Position);
-
-                    if (distance2 < minDistance2)
-                    {
-                        minDistance2 = distance2;
-                        destination = Humans[j].Position;
-                        Zombies[i].HumanIndex = j;
-                    }
+                    minDistance2 = distance2;
+                    humanIndex = j;
                 }
+            }
+            if (humanIndex != -1)
+                destination = Humans[humanIndex].Position;
 
             // Find exact position where zombie will end up after this turn
             if (minDistance2 > Zombie.Speed2)
@@ -165,6 +243,10 @@ class GameState : IDisposable
 
                 destination.X = (int)(zombiePosition.X + x);
                 destination.Y = (int)(zombiePosition.Y + y);
+            }
+            else if (humanIndex != -1)
+            {
+                humanCaught[humanIndex] = true;
             }
 
             // Move zombie
@@ -189,36 +271,33 @@ class GameState : IDisposable
         // 3. Kill zombies
         int kills = 0;
 
-        for (int i = 0; i < Zombies.Length; i++)
-            if (!Zombies[i].Dead && Zombies[i].Position.Distance2(Me) <= Game.MyRange2)
+        for (int i = ZombiesLeft - 1; i >= 0; i--)
+            if (Zombies[i].Position.Distance2(Me) <= Game.MyRange2)
             {
                 kills++;
-                Zombies[i].Dead = true;
                 ZombiesLeft--;
+                if (i != ZombiesLeft)
+                    Zombies[i] = Zombies[ZombiesLeft];
 
                 // Update score
                 Score += HumansLeft * HumansLeft * 10 * FibonacciSequence[kills + 1];
             }
 
         // 4. Kill humans
-        for (int i = 0; i < Zombies.Length; i++)
-            if (!Zombies[i].Dead)
+        for (int i = HumansLeft - 1; i >= 0; i--)
+            if (humanCaught[i] && Humans[i].Position.Distance2(Me) > Game.MyRange2)
             {
-                int j = Zombies[i].HumanIndex;
-
-                if (j >= 0 && !Humans[j].Dead && Humans[j].Position.X == Zombies[i].Position.X && Humans[j].Position.Y == Zombies[i].Position.Y)
-                {
-                    Humans[j].Dead = true;
-                    HumansLeft--;
-                }
+                HumansLeft--;
+                if (HumansLeft != i)
+                    Humans[i] = Humans[HumansLeft];
             }
     }
 
-    public bool IsHumanAlive(int humanId)
+    public bool IsHumanAlive(Human human)
     {
-        foreach (Human human in Humans)
-            if (human.Id == humanId)
-                return !human.Dead;
+        foreach (Human h in Humans)
+            if (human.Position == h.Position)
+                return true;
         return false;
     }
 }
@@ -235,6 +314,9 @@ class Game
     public const int MyRange = 2000;
     public const int MyRange2 = MyRange * MyRange;
     public static bool DumpEnabled = true;
+    private int previousScore = 0;
+    private int previousDestinationScore = -1;
+    private Point previousDestination;
 
     private bool CanHumanBeSaved(Human human, GameState gameState)
     {
@@ -243,7 +325,7 @@ class Game
             gameState.Simulate(human.Position);
         }
 
-        bool result = gameState.IsHumanAlive(human.Id);
+        bool result = gameState.IsHumanAlive(human);
 
         for (int turn = 1; gameState.HumansLeft > 0 && gameState.ZombiesLeft > 0; turn++)
         {
@@ -255,9 +337,15 @@ class Game
 
     public Point PlayTurn(GameState gameState)
     {
-        Stopwatch sw = Stopwatch.StartNew();
+        gameState.Score = previousScore;
 
-        gameState.Init();
+        if (previousDestinationScore > 0 && gameState.Me == previousDestination)
+            previousDestinationScore = -1;
+
+        if (previousDestinationScore > 0)
+            DumpLine($"Previous: {previousDestinationScore}");
+
+        Stopwatch sw = Stopwatch.StartNew();
 
         int bestScore;
         Point bestDestination = SimpleStrategy(gameState, out bestScore);
@@ -267,36 +355,68 @@ class Game
 
         BruteForceStrategy(sw, gameState, out complexScore, out complexDestination);
         DumpLine("Complex: {0}", complexScore);
-        if (complexScore >= bestScore)
-            return complexDestination;
-        return bestDestination;
+
+        int score = bestScore;
+        Point destination = bestDestination;
+
+        if (complexScore > score)
+        {
+            score = complexScore;
+            destination = complexDestination;
+        }
+
+        if (previousDestinationScore > score)
+        {
+            score = previousDestinationScore;
+            destination = previousDestination;
+        }
+
+        previousDestinationScore = score;
+        previousDestination = destination;
+        gameState.Simulate(destination);
+        previousScore = gameState.Score;
+        return destination;
     }
 
     private bool FindInterseptionPoint(GameState gameState, int zombieIndex, out Point interseption)
     {
-        using (GameState gs = gameState.Clone())
+        using (GameState gs = gameState.Clone(zombieIndex))
         {
             int turn = 0;
 
             for (; gs.HumansLeft > 0 && gs.ZombiesLeft > 0; turn++)
             {
-                if (turn * MySpeed + MyRange >= gs.Zombies[zombieIndex].Position.Distance(gameState.Me))
-                {
-                    interseption = gs.Zombies[zombieIndex].Position;
-                    return true;
-                }
-
+                if (turn * MySpeed + MyRange >= gs.Zombies[0].Position.Distance(gameState.Me))
+                    break;
                 gs.Simulate(gs.Me);
             }
 
-            if (gs.HumansLeft > 0 && turn * MySpeed + MyRange >= gs.Zombies[zombieIndex].Position.Distance(gameState.Me))
+            if (gs.HumansLeft > 0 && turn * MySpeed + MyRange >= gs.Zombies[0].Position.Distance(gameState.Me))
             {
-                interseption = gs.Zombies[zombieIndex].Position;
+                interseption = gs.Zombies[0].Position;
+
+                // Improve interseption point
+                using (GameState gs2 = gameState.Clone(zombieIndex))
+                {
+                    while (gs2.HumansLeft > 0 && gs2.ZombiesLeft > 0)
+                        gs2.Simulate(interseption);
+                    interseption = gs2.Me;
+                }
                 return true;
             }
 
             interseption = new Point();
             return false;
+        }
+    }
+
+    struct ZombieDistanceComparer : IComparer<Zombie>
+    {
+        public Point Point;
+
+        public int Compare(Zombie z1, Zombie z2)
+        {
+            return z2.Position.Distance2(Point) - z1.Position.Distance2(Point);
         }
     }
 
@@ -306,36 +426,39 @@ class Game
 
         bestPoint = new Point();
         bestScore = 0;
-        for (int zombieIndex = 0; zombieIndex < gameState.Zombies.Length && !timeToStop; zombieIndex++, timeToStop = IsTimeToStop(sw))
-            if (!gameState.Zombies[zombieIndex].Dead)
+        Array.Sort(gameState.Zombies, 0, gameState.ZombiesLeft, new ZombieDistanceComparer() { Point = gameState.Me });
+        for (int zombieIndex = 0; zombieIndex < gameState.ZombiesLeft && !timeToStop; zombieIndex++, timeToStop = IsTimeToStop(sw))
+        {
+            using (GameState gs = gameState.Clone())
             {
-                using (GameState gs = gameState.Clone())
+                Point interseption;
+
+                if (FindInterseptionPoint(gs, zombieIndex, out interseption))
                 {
-                    Point interseption;
+                    while (gs.Me != interseption && gs.HumansLeft > 0)
+                        gs.Simulate(interseption);
 
-                    if (FindInterseptionPoint(gs, zombieIndex, out interseption))
+                    if (gs.HumansLeft == 0)
+                        continue;
+
+                    int score;
+                    Point point;
+
+                    if (gs.ZombiesLeft == 0)
+                        score = gs.Score;
+                    else
+                        timeToStop = BruteForceStrategy(sw, gs, out score, out point);
+                    if (score > bestScore)
                     {
-                        while (!gs.Zombies[zombieIndex].Dead)
-                            gs.Simulate(interseption);
-
-                        int score;
-                        Point point;
-
-                        if (gs.ZombiesLeft == 0)
-                            score = gs.Score;
-                        else
-                            timeToStop = BruteForceStrategy(sw, gs, out score, out point);
-                        if (score > bestScore)
-                        {
-                            bestPoint = interseption;
-                            bestScore = score;
-                        }
-
-                        if (timeToStop)
-                            break;
+                        bestPoint = interseption;
+                        bestScore = score;
                     }
+
+                    if (timeToStop)
+                        break;
                 }
             }
+        }
 
         return timeToStop;
     }
@@ -360,21 +483,21 @@ class Game
         Point destination = new Point();
 
         bestScore = 0;
-        foreach (Human human in gameState.Humans)
-            if (!human.Dead)
+        for (int i = 0; i < gameState.HumansLeft; i++)
+        {
+            using (GameState gs = gameState.Clone())
             {
-                using (GameState gs = gameState.Clone())
-                {
-                    bool saved = CanHumanBeSaved(human, gs);
+                Human human = gameState.Humans[i];
+                bool saved = CanHumanBeSaved(human, gs);
 
-                    DumpLine("{0}. ({1}) {2}", human.Id, saved, gs.Score);
-                    if (saved && gs.Score > bestScore)
-                    {
-                        bestScore = gs.Score;
-                        destination = human.Position;
-                    }
+                DumpLine("{0}. ({1}) {2}", human.Position, saved, gs.Score);
+                if (saved && gs.Score > bestScore)
+                {
+                    bestScore = gs.Score;
+                    destination = human.Position;
                 }
             }
+        }
 
         return destination;
     }
@@ -412,7 +535,9 @@ class Program
                 humans[i] = new Human
                 {
                     Position = new Point { X = humanX, Y = humanY },
+#if EXTENDED_INFO
                     Id = humanId,
+#endif
                 };
             }
             int zombieCount = int.Parse(Console.ReadLine());
@@ -429,8 +554,10 @@ class Program
                 zombies[i] = new Zombie
                 {
                     Position = new Point { X = zombieX, Y = zombieY },
+#if EXTENDED_INFO
                     Id = zombieId,
                     NextPosition = new Point { X = zombieXNext, Y = zombieYNext },
+#endif
                 };
             }
 
@@ -438,7 +565,9 @@ class Program
             {
                 Me = me,
                 Humans = humans,
+                HumansLeft = humans.Length,
                 Zombies = zombies,
+                ZombiesLeft = zombies.Length,
             };
             Point whereTo = game.PlayTurn(gameState);
             Console.WriteLine("{0} {1}", whereTo.X, whereTo.Y);
